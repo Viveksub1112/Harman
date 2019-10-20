@@ -1,0 +1,53 @@
+# ANSIBLE VERSION 2.8
+-
+        name: check certificate age
+        hosts: webserver
+        become: yes
+        tasks:
+               - name: Check if the certificate for site1.com expires in 7 days
+                 openssl_certificate:
+                                path: /etc/ssl/site1.com/site1.com.crt
+                                provider: assertonly
+                                valid_in: 604800
+                 ignore_errors: yes
+                 register: site1_cert_check
+
+               - name: renew site1.com certificates
+                 openssl_certificate:
+                        path: /etc/ssl/site1.com/site1.com.crt
+                        privatekey_path: /etc/ssl/site1.com/site1.com.key.pem
+                        csr_path: /etc/ssl/ssl/site1.com/site1.com.csr
+                        provider: selfsigned
+                 notify:
+                        - restart apache2
+                        - restart httpd
+                 when: site1_cert_check.failed
+
+               - name: Check if the certificate for site2.com expires in 7 days
+                 openssl_certificate:
+                                path: /etc/ssl/site2.com/site2.com.crt
+                                provider: assertonly
+                                valid_in: 604800
+                 ignore_errors: yes
+                 register: site2_cert_check
+
+               - name: renew site2.com certificates
+                 openssl_certificate:
+                        path: /etc/ssl/site2.com/site2.com.crt
+                        privatekey_path: /etc/ssl/site2.com/site2.com.key.pem
+                        csr_path: /etc/ssl/ssl/site2.com/site2.com.csr
+                 notify:
+                        - restart apache2
+                        - restart httpd
+                 when: site2_cert_check.failed
+
+
+
+        handlers: 
+                - name: restart apache2
+                  service: name=apache2 state=restarted
+                  when: ansible_pkg_mgr == "apt"
+
+                - name: restart httpd
+                  service: name=httpd state=restarted
+                  when: ansible_pkg_mgr == "yum"

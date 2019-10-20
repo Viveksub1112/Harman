@@ -1,0 +1,110 @@
+-
+        name: Install httpd server, install and configure two virtual servers.
+        hosts: webserver
+        become: yes
+
+        tasks:
+                - block:
+                        - apt: name=apache2 state=latest
+                        - apt: name=openssl state=latest
+                  when: ansible_pkg_mgr == "apt"
+
+                - pip:
+                        name: pyOpenSSL
+
+
+                - block:
+                        - yum: pkg=httpd state=latest
+                        - yum: pkg=openssl state=latest
+                  when: ansible_pkg_mgr == "yum"
+
+                - name: Create website directories
+                  file:
+                          path: /var/www/{{ item }}
+                          state: directory
+                  with_items:
+                          - site1.com
+                          - site2.com
+
+                - name: Create ssl certificate directories
+                  file:
+                          path: /etc/ssl/{{ item }}
+                          state: directory
+                  with_items:
+                          - site1.com
+                          - site2.com
+
+                - name: Generate private key
+                  command: openssl genrsa \
+                    -out "/etc/ssl/{{ item }}/{{ item }}.key.pem" 2048
+                  args:
+                        creates: "/etc/ssl/{{ item }}/{{ item }}.key.pem"
+                  with_items:
+                          - site1.com
+                          - site2.com
+
+                - name: Generate CSR            
+                  command: openssl req \
+                    -new \
+                    -subj "/C=US/ST=CA/L=Mountain View/O=Vivek/CN=www.{{ item }}" \
+                    -key "/etc/ssl/{{ item }}/{{ item }}.key.pem" \
+                    -out "/etc/ssl/{{ item }}/{{ item }}.csr"
+                  args:
+                        creates: "/etc/ssl/{{ item }}/{{ item }}.csr"
+                  with_items:
+                          - site1.com
+                          - site2.com
+ 
+                - name: Generate certificates              
+                  command: openssl req \
+                    -x509 \
+                    -days 365 \
+                    -key "/etc/ssl/{{ item }}/{{ item }}.key.pem" \
+                    -in "/etc/ssl/{{ item }}/{{ item }}.csr" \
+                    -out "/etc/ssl/{{ item }}/{{ item }}.crt"
+                  args:
+                        creates: "/ets/ssl/{{ item }}/{{ item }}.crt"
+                  with_items:
+                          - site1.com
+                          - site2.com
+
+
+                - name: Copy code base
+                  copy: src=./{{ item }}/index.html dest=/var/www/{{ item }}/index.html
+                  with_items:
+                          - site1.com
+                          - site2.com
+
+                - name: Copy apache2 server configuration
+                  copy: src=./{{ item }}/{{ item }}.conf dest=/etc/apache2/sites-available/
+                  notify:
+                          - restart apache2
+                  with_items:
+                          - site1.com
+                          - site2.com
+                  when: ansible_pkg_mgr == "apt"
+
+                - name: Enable website incase apache2
+                  command: a2ensite {{ item }}
+                  notify:
+                          - restart apache2
+                  with_items:
+                          - site1.com
+                          - site2.com
+                  when: ansible_pkg_mgr == "apt"
+
+                - name: Copy httpd server configuration
+                  copy: src=./{{ item }}/{{ item }}.conf dest=/etc/httpd/conf/
+                  notify:
+                          - restart httpd
+                  with_items:
+                          - site1.com
+                          - site2.com
+                  when: ansible_pkg_mgr == "yum"
+
+        handlers:
+                - name: restart apache2
+                  service: name=apache2 state=restarted
+
+                - name: restart httpd
+                  service: name=httpd state=restarted
